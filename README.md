@@ -2,7 +2,8 @@
 
 A **high-fidelity, read-only preview** of a Word document (`word-demo.docx`) in the browser,
 rendered **four different ways behind a tab switcher** so the approaches can be compared on
-fidelity, performance, and dependency footprint. Scroll + text selection is the only
+fidelity, performance, and dependency footprint, plus a **fifth tab that converts the document
+to PDF on the server** (two in-process engines). Scroll + text selection is the only
 interaction; there are no editing affordances. A heading-outline sidebar and a word/paragraph
 status line (the Word-flavored equivalents of the Excel POC's formula bar and status bar)
 round out the backend tab.
@@ -115,6 +116,7 @@ The API:
 |----------|---------|---------|
 | `GET /api/document` | A, D | the resolved `DocumentModel` as JSON |
 | `GET /api/document/file` | B, C | the raw `.docx` bytes (same-origin) |
+| `GET /api/document/pdf?engine=oss\|devexpress` | E | the document converted to PDF, in-process (`application/pdf`) |
 
 ---
 
@@ -223,11 +225,107 @@ flow (a simplification — no float/wrap).
 
 ---
 
+## docx → PDF conversion (backend, in-process)
+
+Tab **E** converts the document to PDF **on the .NET server, in-process** — no LibreOffice/Docker
+sidecar, no separate service — and streams it back same-origin to the browser's native PDF viewer.
+The `.docx` never leaves the machine, same contract as the other endpoints. Two engines are wired
+behind a small `IPdfConverter` interface (`WordApi/Services/PdfConversion/`) and selected with
+`?engine=`:
+
+| Engine | `?engine=` | How | Fidelity | Status here |
+|--------|-----------|-----|----------|-------------|
+| **QuestPDF** (low-cost) | `oss` (default) | reuses approach A's parsed `DocumentModel` → QuestPDF layout; **paginates automatically** | good-enough business-doc | ✅ implemented, default |
+| **DevExpress Office & PDF File API** (commercial) | `devexpress` | `RichEditDocumentServer.ExportToPdf` — direct `.docx` → PDF, one call | high | ⚙️ code present, behind the `DEVEXPRESS` build symbol (needs the DevExpress feed + license) |
+
+### Requirements this was chosen against
+
+- **In-process only** — pure managed .NET, no sidecar. **Linux containers** — so anything needing
+  `libgdiplus`/GDI+ is out; SkiaSharp/HarfBuzz-based engines are preferred.
+- **Good-enough** fidelity (content, headings, lists, tables, images correct; layout need not be
+  pixel-identical to Word).
+- **≤ $5,000/yr**, **11 developers**, **> $1M annual revenue** (so no free-tier eligibility).
+
+### Candidate engines (2026 list prices)
+
+Per-developer licenses count **developers who write/reference the library's API** — not the whole
+company. A backend PDF feature is typically touched by a subset of the 11 devs, which is what keeps
+the per-seat options viable.
+
+| Engine | License model | Cost for this situation (>$1M rev, Linux) | Linux mechanism | Fidelity | In-process one-liner | Fits ≤$5k? |
+|--------|---------------|-------------------------------------------|-----------------|:--------:|:--------------------:|:----------:|
+| **QuestPDF** (our model → PDF) | Dual-licensed; **paid above $1M rev** — Professional $999 perpetual (≤10 devs) / Enterprise $2,999/yr (>10) | Bundled Skia (no libgdiplus) | good-enough | ⚠️ we build the layout | ✅ comfortably (paid) |
+| **DevExpress Office File API** | Per-dev/yr | ~$1,199/dev new, ~$599 renew → 11 ≈ $13.2k; **$0 marginal if the team already owns DevExpress Universal** | `DevExpress.Drawing.Skia` | very good | ✅ `ExportToPdf` | ⚠️ only if ≤4 API-devs, or already owned |
+| **GemBox.Document** | Perpetual, royalty-free deploy | Small Team **$4,450 (≤10 devs)** / Large Team $13,350 (≤50) | SkiaSharp + HarfBuzz | very good | ✅ `Save(".pdf")` | ✅ if ≤10 API-devs; ❌ at strict 11 |
+| **Syncfusion DocIO** | Per-dev/yr (Community ineligible: >$1M & >5 devs) | ~$995/dev → 11 ≈ $10.9k | SkiaSharp | very good | ✅ `DocToPDFConverter` | ⚠️ only if ≤5 API-devs |
+| **Aspose.Words** | Per-dev; or metered pay-per-use | ~$1,175 Small Business / ~$3,597 OEM per dev; or metered | Internal SkiaSharp | excellent | ✅ `Save(".pdf")` | ❌ upfront; ⚠️ metered for low volume |
+| **Spire.Doc** | $999 dev / $2,999 OEM | needs **libgdiplus** on Linux → deployment friction | System.Drawing/GDI+ | good | ✅ `SaveToFile` | ❌ (Linux) |
+| **Xceed Words** | $849.95 perpetual, fully managed | cheapest; lower fidelity on advanced features | Custom managed engine | decent | ✅ | ✅ budget / ⚠️ fidelity |
+
+> Prices are 2026 **list** figures from public pages / marketplace summaries; verify with the
+> vendor. Fidelity/Linux notes are corroborated by a public Word→PDF-on-Linux comparison of these
+> libraries (see the DEV.to "Document Processing Libraries for Word to PDF on .NET 8 (Linux Azure
+> Functions)" writeup).
+
+### How the constraints narrow the field
+
+- At **11 seats**, the per-developer engines (**DevExpress**, **Syncfusion**, **Aspose**) exceed
+  $5k unless only a small subset of devs reference the API. **GemBox** sits right on the ≤10-dev
+  boundary ($4,450 perpetual) — fine at ≤10 API-devs, over at a strict 11.
+- **Spire.Doc** is ruled out by the Linux constraint (libgdiplus).
+- **QuestPDF** is the only engine that fits ≤$5k *regardless* of how the seats are counted ($999
+  perpetual for the backend team, or $2,999/yr Enterprise even if all 11 reference it) — but note
+  it is **paid** here, not free, and you author the layout mapping yourself.
+
+### Dependencies added per option
+
+| Option | Library added | Direct deps | Transitive packages | Installed / deployed size |
+|--------|---------------|:-----------:|:-------------------:|--------------------------:|
+| **E · QuestPDF** | `QuestPDF` 2026.6.1 (NuGet, dual MIT/commercial) | **1** | **0** (bundles its own Skia) | package ~119 MB (native Skia for **all** RIDs); **deployed ~6 MB** per platform (`QuestPDF.dll` 0.5 MB + one `libQuestPdfSkia` ~5.5 MB) |
+| **F · DevExpress** | `DevExpress.Document.Processor` + `DevExpress.Drawing.Skia` (private feed, commercial) | 2 | several DevExpress assemblies | *not installed here* (private feed); order of tens of MB |
+
+### The two implemented approaches, head-to-head
+
+Measured on `word-demo.docx` via `GET /api/document/pdf` (times exclude the process-start JIT; the
+first request is ~1.1 s cold, warm requests ~30–40 ms):
+
+| | **E · QuestPDF** (`oss`) | **F · DevExpress** (`devexpress`) |
+|---|---|---|
+| Output | 4 pages, ~74 KB | (enable the engine to measure) |
+| Conversion time (warm) | ~35 ms | — |
+| Pagination | ✅ automatic (real pages) | ✅ |
+| Red H1 / heading sizes | ✅ | ✅ |
+| Ordered list 1–6 + nested bullets | ✅ | ✅ |
+| Simple + complex table (merged headers) | ✅ colspans render | ✅ |
+| Inline images (pie chart, symbol) | ✅ | ✅ |
+| Two-column section | ❌ single column (no native QuestPDF multicol) | ✅ |
+
+Verified by rendering the endpoint output in Chrome's PDF viewer: the red **Sample Document** H1,
+the 1–6 ordered list with the nested Simple/Complex-Tables bullets, the pie-chart image, and the
+complex table whose "May 2012" / "September 2010" headers each span two columns all reproduce.
+QuestPDF's one gap is the two-column section (rendered single-column).
+
+### Recommendation & how to enable DevExpress
+
+- **QuestPDF** is the recommended path here: cheapest full-featured option at 11 devs (though a
+  **paid** license, not free), reuses the model we already parse, and matches the good-enough bar.
+- For a **drop-in high-fidelity one-liner**, use **DevExpress** *if the team already owns a
+  DevExpress subscription* (then it's $0 marginal), else **GemBox.Document** is the best-value
+  perpetual option.
+- The **DevExpress** converter (`DevExpressPdfConverter.cs`) compiles as a stub reporting HTTP 501
+  until you: (1) add the DevExpress NuGet feed + your auth key via a `nuget.config`; (2) reference
+  `DevExpress.Document.Processor` + `DevExpress.Drawing.Skia`; (3) register your license and define
+  the `DEVEXPRESS` build symbol. GemBox drops into the same interface with no endpoint/frontend
+  change (it's on nuget.org with an emailed trial key).
+
+---
+
 ## Commercial alternatives (evaluation)
 
-The four implemented approaches are all OSS with permissive licenses. For completeness, here is
+The four **preview** approaches are all OSS with permissive licenses. For completeness, here is
 how the notable **commercial / copyleft** Word-in-the-browser options fare against the same
-constraints as the Excel POC.
+constraints as the Excel POC. (For server-side **PDF conversion** engines specifically, see the
+dedicated section above.)
 
 ### Constraints
 

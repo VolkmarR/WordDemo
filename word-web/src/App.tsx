@@ -8,8 +8,9 @@ import { loadFromBackend, type LoadResult } from './adapters/backendModel'
 const DocxPreviewView = lazy(() => import('./views/DocxPreviewView'))
 const MammothView = lazy(() => import('./views/MammothView'))
 const TiptapView = lazy(() => import('./views/TiptapView'))
+const PdfView = lazy(() => import('./views/PdfView'))
 
-type Approach = 'a' | 'b' | 'c' | 'd'
+type Approach = 'a' | 'b' | 'c' | 'd' | 'e'
 
 const TABS: { id: Approach; label: string; desc: string }[] = [
   {
@@ -31,6 +32,11 @@ const TABS: { id: Approach; label: string; desc: string }[] = [
     id: 'd',
     label: 'D — Backend model · Tiptap',
     desc: "Approach A's JSON model mapped into an off-the-shelf OSS rich-text component (Tiptap, read-only).",
+  },
+  {
+    id: 'e',
+    label: 'E — Backend · PDF export',
+    desc: 'Converted to PDF on the .NET server, in-process (QuestPDF or DevExpress), shown in the browser PDF viewer. Nothing leaves the machine.',
   },
 ]
 
@@ -124,6 +130,12 @@ function App() {
         {approach === 'd' && backend && (
           <Suspense fallback={<div className="msg">Loading Tiptap…</div>}>
             <TiptapView model={backend.model} />
+          </Suspense>
+        )}
+
+        {approach === 'e' && (
+          <Suspense fallback={<div className="msg">Loading PDF view…</div>}>
+            <PdfView />
           </Suspense>
         )}
       </main>

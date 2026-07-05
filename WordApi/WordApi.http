@@ -1,6 +1,11 @@
-@ExcelApi_HostAddress = http://localhost:5269
+@WordApi_HostAddress = http://localhost:5269
 
-GET {{ExcelApi_HostAddress}}/weatherforecast/
+### Approach A — parsed DocumentModel JSON
+GET {{WordApi_HostAddress}}/api/document
 Accept: application/json
+
+### Approaches B/C/D — raw .docx bytes
+GET {{WordApi_HostAddress}}/api/document/file
+Accept: application/vnd.openxmlformats-officedocument.wordprocessingml.document
 
 ###

@@ -1,0 +1,25 @@
+/* docx-preview draws its own page sheets; we just give it a scrollable, centered stage. */
+.dp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* docx-preview emits .docx-wrapper > section.docx pages with inline sizes + a grey backdrop. */
+.dp-host {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.dp-host .docx-wrapper {
+  background: transparent;
+  padding: 0;
+}
+.dp-host .docx-wrapper > section.docx {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  margin-bottom: 24px;
+}

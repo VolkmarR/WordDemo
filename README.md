@@ -94,6 +94,10 @@ weight for a document you never edit.
 
 ## Running it
 
+**Prerequisites:** .NET SDK 10, Node 20+, and pnpm (`corepack enable`). On the **backend's host**,
+the fonts used by the document (Calibri, or the metric-compatible `Carlito`) must be installed for
+the QuestPDF PDF export to render real glyphs — see [Deploying](#deploying-linux-fonts--licensing).
+
 ```bash
 # 1. Backend (serves the parsed model + the raw .docx on http://localhost:5269)
 cd WordApi
@@ -382,3 +386,82 @@ server-side. Both are permissively licensed and send nothing to any third party.
   built-ins; a tiny ambient `.d.ts` supplies types for that subpath.
 - **The document sheets are intentionally always light** (a printed page is a light artifact),
   independent of the OS light/dark theme; the app chrome follows the system theme.
+- **PDF status headers.** `/api/document/pdf` returns `X-Convert-Ms` and `X-Pdf-Bytes`; the tab-E
+  status line reads them. They're exposed via `Access-Control-Expose-Headers` so they'd survive a
+  cross-origin fetch too (in dev they're same-origin through the Vite proxy).
+- **`NU1903` build warning** — `Microsoft.OpenApi` 2.0.0 (pulled transitively by the OpenAPI/Swagger
+  packages) has a flagged advisory. It only affects the dev-time Swagger UI, not the PDF/parsing
+  paths; bump `Microsoft.AspNetCore.OpenApi` when a patched version is available.
+
+---
+
+## Project layout
+
+```
+WordDemo/
+├─ word-demo.docx                     the sample document
+├─ WordApi/                           ASP.NET Core (.NET 10) minimal API
+│  ├─ Program.cs                      endpoints + QuestPDF license + engine registry
+│  ├─ Models/DocumentModel.cs         shared, style-resolved model (mirrors model.ts)
+│  ├─ Services/DocumentReader.cs      Open XML SDK parser (styles, numbering, images)
+│  └─ Services/PdfConversion/
+│     ├─ IPdfConverter.cs             engine interface (Engine id + Convert(path))
+│     ├─ QuestPdfConverter.cs         model → QuestPDF (engine "oss", default)
+│     └─ DevExpressPdfConverter.cs    RichEditDocumentServer (engine "devexpress", behind DEVEXPRESS)
+└─ word-web/                          React 19 + Vite 8, pnpm
+   └─ src/
+      ├─ App.tsx                       tab switcher (A–E)
+      ├─ model.ts                      TS mirror of DocumentModel
+      ├─ adapters/backendModel.ts      fetches /api/document (A, D)
+      ├─ doc/DocView.tsx               approach A custom renderer
+      └─ views/                        DocxPreviewView · MammothView · TiptapView · PdfView
+```
+
+---
+
+## Deploying (Linux, fonts & licensing)
+
+- **Fonts (QuestPDF).** QuestPDF rasterizes text with its bundled Skia and only has access to fonts
+  present on the host. A stock Linux container has none of the document's fonts, so text renders as
+  tofu (□) or falls back to a default. Install a metric-compatible set in the image, e.g. for
+  Debian/Ubuntu: `apt-get install -y fonts-crosextra-carlito fonts-liberation` (Carlito ≈ Calibri,
+  Liberation ≈ Arial/Times). Alternatively embed a `.ttf` and register it once at startup with
+  `QuestPDF.Drawing.FontManager.RegisterFont(File.OpenRead("Calibri.ttf"))`. docx-preview/mammoth
+  (browser tabs) are unaffected — they use the *viewer's* fonts.
+- **QuestPDF license.** Set once at startup (`Program.cs`):
+  `QuestPDF.Settings.License = LicenseType.Professional;` — use `Enterprise` if more than 10
+  developers reference QuestPDF. This is a legal acknowledgement, not a key; forgetting it throws at
+  first `GeneratePdf()` above the free-tier threshold.
+- **No native GDI+ dependency.** Both wired engines are Linux-clean (QuestPDF's bundled Skia;
+  DevExpress via `DevExpress.Drawing.Skia`), so **no `libgdiplus`** is required — the reason Spire.Doc
+  was ruled out.
+
+### Adding or swapping a PDF engine
+
+The engine set is just an array in `Program.cs` keyed by `IPdfConverter.Engine`. To add one
+(e.g. **GemBox.Document** as the commercial slot instead of DevExpress):
+
+1. Add the NuGet package (GemBox is on nuget.org; DevExpress needs its private feed).
+2. Implement `IPdfConverter` — `Engine => "gembox"`, and in `Convert(path)`:
+   `ComponentInfo.SetLicense("FREE-LIMITED-KEY"); var doc = DocumentModel.Load(path); doc.Save(ms, new PdfSaveOptions()); return ms.ToArray();`
+3. Add `new GemBoxPdfConverter()` to the `pdfConverters` array and the engine to `PdfView.tsx`'s
+   `ENGINES` list. No endpoint change is needed.
+
+To enable **DevExpress** specifically: add its NuGet feed + auth key via a `nuget.config`, reference
+`DevExpress.Document.Processor` + `DevExpress.Drawing.Skia`, register your license, and add
+`<DefineConstants>$(DefineConstants);DEVEXPRESS</DefineConstants>` to `WordApi.csproj` (or
+`dotnet build -p:DefineConstants=DEVEXPRESS`).
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---------|-------------|
+| Tab A/D/E show *"Could not reach the document API"* | Backend isn't running or is on a different port. Start it with `dotnet run --launch-profile http` (listens on `:5269`, which the Vite proxy targets). |
+| Tab E DevExpress shows *"engine is not enabled in this build"* (HTTP 501) | Expected until DevExpress is configured — see [Adding or swapping a PDF engine](#adding-or-swapping-a-pdf-engine). Use `?engine=oss` meanwhile. |
+| PDF text is boxes/□ or the wrong font (esp. in a Linux container) | Missing fonts on the backend host — install Carlito/Liberation or register a `.ttf`; see [Deploying](#deploying-linux-fonts--licensing). |
+| `GeneratePdf()` throws a QuestPDF license exception | `QuestPDF.Settings.License` not set (or set below your tier). Set it at startup. |
+| `DocumentLayoutException: conflicting size constraints` from QuestPDF | Something exceeds the page width (e.g. constant column widths). The converter already uses proportional (`RelativeColumn`) table columns to avoid this; keep new content width-flexible. |
+| First `/api/document/pdf` call is ~1 s, later ones ~30 ms | Expected — the first request pays QuestPDF/Skia JIT + init warm-up; steady-state is tens of ms. |
+| `.docx` is locked/open in Word while the API reads it | `DocumentReader` opens with `FileShare.ReadWrite`, so this is fine; if you swap in an engine that opens exclusively, close Word first. |

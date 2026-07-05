@@ -1,0 +1,66 @@
+/* mammoth outputs plain semantic HTML; this is a small readable "article" stylesheet, not an
+   attempt at document fidelity — that contrast is the point of the tab. */
+.mm-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.mm-doc {
+  box-sizing: border-box;
+  width: 760px;
+  max-width: 100%;
+  background: #fff;
+  color: #1a1a1a;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  padding: 56px 64px;
+  text-align: left;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* Shield headings from the global index.css `h1,h2` theme color (would go near-white in
+   the OS dark theme against this white page). */
+.mm-doc :is(h1, h2, h3) {
+  color: #1a1a1a;
+}
+.mm-doc h1 {
+  font-size: 1.9em;
+  margin: 0 0 0.5em;
+}
+.mm-doc h2 {
+  font-size: 1.4em;
+  margin: 1.2em 0 0.4em;
+}
+.mm-doc h3 {
+  font-size: 1.15em;
+  margin: 1em 0 0.3em;
+}
+.mm-doc p {
+  margin: 0 0 0.8em;
+}
+.mm-doc img {
+  max-width: 100%;
+  height: auto;
+}
+.mm-doc table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+.mm-doc td,
+.mm-doc th {
+  border: 1px solid #999;
+  padding: 4px 8px;
+}
+.mm-doc ol,
+.mm-doc ul {
+  padding-left: 1.6em;
+}
+.mm-doc a {
+  color: #0645ad;
+}

@@ -1,0 +1,174 @@
+/* Approach A — custom paged-look renderer. Word documents are fixed light artifacts, so the
+   sheet is intentionally always light (like a printed page) regardless of system theme. */
+
+.doc-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Heading-outline sidebar (click to scroll). */
+.doc-outline {
+  flex: 0 0 220px;
+  width: 220px;
+  overflow: auto;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  text-align: left;
+}
+.doc-outline-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  margin: 0 6px 8px;
+}
+.doc-outline button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-outline button:hover {
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+.doc-outline button.lvl1 {
+  font-weight: 600;
+  color: var(--text-h);
+}
+.doc-outline button.lvl2 {
+  padding-left: 18px;
+}
+.doc-outline button.lvl3 {
+  padding-left: 32px;
+}
+
+.doc-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Footer status line — the Word equivalent of the Excel POC's status bar. */
+.doc-footer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 18px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.doc-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.doc-page {
+  --doc-font: 'Calibri', 'Segoe UI', system-ui, sans-serif;
+  --doc-rule: #cfcfcf;
+  box-sizing: border-box;
+  background: #fff;
+  color: #000;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  font-family: var(--doc-font);
+  font-size: 11pt;
+  line-height: 1.15;
+  text-align: left;
+  /* Leave room so the shadow isn't clipped by the scroll container. */
+  margin: 0 auto;
+}
+
+.doc-section + .doc-section {
+  margin-top: 4px;
+}
+
+/* Headings: run-level styling (bold/size/color) drives appearance, so reset UA defaults.
+   The explicit color also shields the sheet from the global index.css `h1,h2` theme color;
+   an inline run color (e.g. the red H1) still wins over this. */
+.doc-page .doc-h {
+  font-family: var(--doc-font);
+  font-weight: 700;
+  color: #000;
+  margin: 0;
+  line-height: 1.2;
+  scroll-margin-top: 12px;
+}
+
+.doc-page .doc-p {
+  margin: 0;
+}
+
+/* List items: hanging marker positioned in the indent. */
+.doc-li {
+  display: flex;
+  align-items: baseline;
+}
+.doc-li-marker {
+  flex: 0 0 auto;
+  min-width: 24px;
+  padding-right: 6px;
+}
+.doc-li-body {
+  flex: 1 1 auto;
+}
+
+.doc-link {
+  color: inherit;
+}
+
+.doc-img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: top;
+  margin: 2px 12px 2px 0;
+}
+
+/* Tables: the sample uses the TableGrid style (uniform 0.5pt borders); rendered uniformly. */
+.doc-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  table-layout: fixed;
+}
+.doc-table th,
+.doc-table td {
+  border: 1px solid #808080;
+  padding: 3px 6px;
+  vertical-align: top;
+  text-align: left;
+}
+.doc-table th {
+  font-weight: 700;
+}
+.doc-table p,
+.doc-table .doc-p {
+  margin: 0;
+}
+
+/* Page break in continuous flow: a subtle divider standing in for a real page boundary. */
+.doc-pagebreak {
+  height: 0;
+  margin: 18px 0;
+  border-top: 1px dashed #bbb;
+}

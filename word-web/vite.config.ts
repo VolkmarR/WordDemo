@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     proxy: {
       // Forward API calls to the ASP.NET backend (http profile in launchSettings.json)
-      '/weatherforecast': 'http://localhost:5269',
+      '/api': 'http://localhost:5269',
     },
   },
 })

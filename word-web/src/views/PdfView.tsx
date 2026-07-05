@@ -6,9 +6,10 @@ import './PdfView.css'
 // straight at the URL) so we can read the X-Convert-Ms / X-Pdf-Bytes headers for the status line
 // and reuse the same bytes for the Download button. Nothing leaves the machine.
 
-type Engine = 'oss' | 'devexpress'
+type Engine = 'migradoc' | 'oss' | 'devexpress'
 
 const ENGINES: { id: Engine; label: string; note: string }[] = [
+  { id: 'migradoc', label: 'MigraDoc (free · MIT)', note: 'Independent Open XML walk → MigraDoc/PDFsharp. Own read+render pipeline, MIT-free.' },
   { id: 'oss', label: 'QuestPDF (low-cost)', note: "Backend DocumentModel → QuestPDF. Reuses approach A's parsed model." },
   { id: 'devexpress', label: 'DevExpress (commercial)', note: 'RichEditDocumentServer.ExportToPdf — direct .docx → PDF, higher fidelity.' },
 ]

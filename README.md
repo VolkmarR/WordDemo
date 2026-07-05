@@ -3,7 +3,7 @@
 A **high-fidelity, read-only preview** of a Word document (`word-demo.docx`) in the browser,
 rendered **four different ways behind a tab switcher** so the approaches can be compared on
 fidelity, performance, and dependency footprint, plus a **fifth tab that converts the document
-to PDF on the server** (two in-process engines). Scroll + text selection is the only
+to PDF on the server** (three in-process engines). Scroll + text selection is the only
 interaction; there are no editing affordances. A heading-outline sidebar and a word/paragraph
 status line (the Word-flavored equivalents of the Excel POC's formula bar and status bar)
 round out the backend tab.
@@ -239,8 +239,14 @@ behind a small `IPdfConverter` interface (`WordApi/Services/PdfConversion/`) and
 
 | Engine | `?engine=` | How | Fidelity | Status here |
 |--------|-----------|-----|----------|-------------|
+| **MigraDoc / PDFsharp** (free · MIT) | `migradoc` | **independent** Open XML walk → MigraDoc/PDFsharp layout — its *own* read+render pipeline, not the shared `DocumentModel` | good-enough (rougher than QuestPDF) | ✅ implemented, free |
 | **QuestPDF** (low-cost) | `oss` (default) | reuses approach A's parsed `DocumentModel` → QuestPDF layout; **paginates automatically** | good-enough business-doc | ✅ implemented, default |
 | **DevExpress Office & PDF File API** (commercial) | `devexpress` | `RichEditDocumentServer.ExportToPdf` — direct `.docx` → PDF, one call | high | ⚙️ code present, behind the `DEVEXPRESS` build symbol (needs the DevExpress feed + license) |
+
+Engines **E (QuestPDF)** and **C (MigraDoc)** differ not just by rendering library but by *pipeline*:
+QuestPDF rides the shared `DocumentReader` model (approach A); MigraDoc parses the `.docx` itself in
+`MigraDocConverter.cs`, sharing nothing with the QuestPDF path — so the two exercise fully
+independent read-and-render code (a fairer whole-pipeline comparison, at the cost of a parallel reader).
 
 ### Requirements this was chosen against
 
@@ -258,11 +264,14 @@ the per-seat options viable.
 
 | Engine | License model | Cost for this situation (>$1M rev, Linux) | Linux mechanism | Fidelity | In-process one-liner | Fits ≤$5k? |
 |--------|---------------|-------------------------------------------|-----------------|:--------:|:--------------------:|:----------:|
-| **QuestPDF** (our model → PDF) | Dual-licensed; **paid above $1M rev** — Professional $999 perpetual (≤10 devs) / Enterprise $2,999/yr (>10) | Bundled Skia (no libgdiplus) | good-enough | ⚠️ we build the layout | ✅ comfortably (paid) |
+| **PDFsharp / MigraDoc** (our walk → PDF) | **MIT — free**, incl. commercial >$1M (optional paid "compliant" license only to drop MIT notices) | Managed PDFsharp + an `IFontResolver` reading OS fonts | good-enough (rougher) | ⚠️ we build the layout | ✅ **free** |
+| **QuestPDF** (our model → PDF) | Dual-licensed; **paid above $1M rev** — Professional $999 perpetual (≤10 devs) / Enterprise $2,999/yr (>10) | Bundled Skia + HarfBuzz (no libgdiplus) | good-enough | ⚠️ we build the layout | ✅ comfortably (paid) |
 | **DevExpress Office File API** | Per-dev/yr | ~$1,199/dev new, ~$599 renew → 11 ≈ $13.2k; **$0 marginal if the team already owns DevExpress Universal** | `DevExpress.Drawing.Skia` | very good | ✅ `ExportToPdf` | ⚠️ only if ≤4 API-devs, or already owned |
 | **GemBox.Document** | Perpetual, royalty-free deploy | Small Team **$4,450 (≤10 devs)** / Large Team $13,350 (≤50) | SkiaSharp + HarfBuzz | very good | ✅ `Save(".pdf")` | ✅ if ≤10 API-devs; ❌ at strict 11 |
 | **Syncfusion DocIO** | Per-dev/yr (Community ineligible: >$1M & >5 devs) | ~$995/dev → 11 ≈ $10.9k | SkiaSharp | very good | ✅ `DocToPDFConverter` | ⚠️ only if ≤5 API-devs |
 | **Aspose.Words** | Per-dev; or metered pay-per-use | ~$1,175 Small Business / ~$3,597 OEM per dev; or metered | Internal SkiaSharp | excellent | ✅ `Save(".pdf")` | ❌ upfront; ⚠️ metered for low volume |
+| **Telerik Document Processing** | Bundled in DevCraft, per-dev/yr, royalty-free deploy | ~$1,149/dev/yr → 11 ≈ $12.6k; **$0 marginal if the team already owns Telerik/DevCraft** | SkiaSharp | very good | ✅ `PdfFormatProvider` | ⚠️ only if ≤4 API-devs, or already owned |
+| **IronPDF** | Perpetual | Lite $499 (1 dev) / **Professional $999 (10 devs)** / $2,999+ redistribution | Embedded **Chromium** (HTML→PDF) | very good (CSS) | ✅ `RenderHtmlAsPdf` / Docx | ✅ if ≤10 devs — but heavy footprint |
 | **Spire.Doc** | $999 dev / $2,999 OEM | needs **libgdiplus** on Linux → deployment friction | System.Drawing/GDI+ | good | ✅ `SaveToFile` | ❌ (Linux) |
 | **Xceed Words** | $849.95 perpetual, fully managed | cheapest; lower fidelity on advanced features | Custom managed engine | decent | ✅ | ✅ budget / ⚠️ fidelity |
 
@@ -273,49 +282,89 @@ the per-seat options viable.
 
 ### How the constraints narrow the field
 
-- At **11 seats**, the per-developer engines (**DevExpress**, **Syncfusion**, **Aspose**) exceed
-  $5k unless only a small subset of devs reference the API. **GemBox** sits right on the ≤10-dev
-  boundary ($4,450 perpetual) — fine at ≤10 API-devs, over at a strict 11.
-- **Spire.Doc** is ruled out by the Linux constraint (libgdiplus).
-- **QuestPDF** is the only engine that fits ≤$5k *regardless* of how the seats are counted ($999
-  perpetual for the backend team, or $2,999/yr Enterprise even if all 11 reference it) — but note
-  it is **paid** here, not free, and you author the layout mapping yourself.
+- At **11 seats**, the per-developer engines (**DevExpress**, **Telerik**, **Syncfusion**, **Aspose**)
+  exceed $5k unless only a small subset of devs reference the API — worthwhile only when the team
+  **already owns** the suite (then it's $0 marginal). **GemBox** sits right on the ≤10-dev boundary
+  ($4,450 perpetual) — fine at ≤10 API-devs, over at a strict 11.
+- **Spire.Doc** is ruled out by the Linux constraint (libgdiplus). **IronPDF** fits the budget
+  ($999/10 devs) but drags in an embedded Chromium (large image, native deps) for what is really a
+  browser process — a different, heavier architecture (see below).
+- **QuestPDF** ($999 perpetual, or $2,999/yr Enterprise if all 11 reference it) is the cheapest
+  *full-featured layout* engine — but it is **paid**, and you author the mapping yourself.
+- **PDFsharp / MigraDoc** does the same job for **$0**: MIT-licensed, free even commercially, same
+  "we build the layout" architecture. It is the true low-cost floor. The trade you make for free is
+  a clunkier, older layout API (more mapping code, rougher output) and — unlike QuestPDF's bundled
+  Skia — no fonts or text shaper, so you must supply an `IFontResolver` and install fonts on the host.
+
+### Other architectures & ruled-out options
+
+- **docx → HTML → PDF** (a *different* pipeline). You already render the doc to HTML in the browser
+  (docx-preview, mammoth); a backend HTML→PDF step could reuse that. Engines: **IronPDF** or
+  **PuppeteerSharp / Playwright** (all drive a **Chromium** — great CSS fidelity, and the only path
+  that would render the two-column section natively, but a browser process sits right on the edge of
+  the "in-process, no sidecar" rule) and **wkhtmltopdf / DinkToPdf** (abandoned, native deps). Not
+  pursued: heavyweight for a "good-enough business doc," and Chromium-in-a-container is close to the
+  sidecar we excluded.
+- **Ruled out by the constraints:**
+  - **Cloud conversion APIs** (Adobe PDF Services, Aspose.Cloud, CloudConvert) — the `.docx` would
+    leave the machine, violating the same-origin/privacy rule that governs every other tab. Hard no.
+  - **Headless LibreOffice / LibreOfficeKit** — highest fidelity of all, but needs the LibreOffice
+    binaries in the image; that *is* the native-dependency/sidecar we ruled out, even without a
+    separate container.
+  - **Word Interop (`Microsoft.Office.Interop.Word`)** — requires Word installed and is Windows-only;
+    incompatible with Linux containers.
 
 ### Dependencies added per option
 
 | Option | Library added | Direct deps | Transitive packages | Installed / deployed size |
 |--------|---------------|:-----------:|:-------------------:|--------------------------:|
+| **C · MigraDoc** | `PDFsharp-MigraDoc` 6.2.4 (NuGet, **MIT**) | **1** | **1** (`PDFsharp`) | fully managed; **~1 MB** of assemblies, no native libs. Needs OS fonts (+ our `IFontResolver`) — no fonts bundled |
 | **E · QuestPDF** | `QuestPDF` 2026.6.1 (NuGet, dual MIT/commercial) | **1** | **0** (bundles its own Skia) | package ~119 MB (native Skia for **all** RIDs); **deployed ~6 MB** per platform (`QuestPDF.dll` 0.5 MB + one `libQuestPdfSkia` ~5.5 MB) |
 | **F · DevExpress** | `DevExpress.Document.Processor` + `DevExpress.Drawing.Skia` (private feed, commercial) | 2 | several DevExpress assemblies | *not installed here* (private feed); order of tens of MB |
 
-### The two implemented approaches, head-to-head
+### The implemented approaches, head-to-head
 
 Measured on `word-demo.docx` via `GET /api/document/pdf` (times exclude the process-start JIT; the
-first request is ~1.1 s cold, warm requests ~30–40 ms):
+first request is slower — QuestPDF ~1.1 s cold for Skia init, MigraDoc's first call pays a one-time
+OS-font-directory scan + PDFsharp init — then warm requests settle to tens of ms):
 
-| | **E · QuestPDF** (`oss`) | **F · DevExpress** (`devexpress`) |
-|---|---|---|
-| Output | 4 pages, ~74 KB | (enable the engine to measure) |
-| Conversion time (warm) | ~35 ms | — |
-| Pagination | ✅ automatic (real pages) | ✅ |
-| Red H1 / heading sizes | ✅ | ✅ |
-| Ordered list 1–6 + nested bullets | ✅ | ✅ |
-| Simple + complex table (merged headers) | ✅ colspans render | ✅ |
-| Inline images (pie chart, symbol) | ✅ | ✅ |
-| Two-column section | ❌ single column (no native QuestPDF multicol) | ✅ |
+| | **C · MigraDoc** (`migradoc`) | **E · QuestPDF** (`oss`) | **F · DevExpress** (`devexpress`) |
+|---|---|---|---|
+| Cost | **free (MIT)** | paid ($999+) | commercial (per-dev) |
+| Output | 3 pages, ~108 KB | 4 pages, ~74 KB | (enable the engine to measure) |
+| Conversion time (warm) | **~13 ms** | ~18 ms | — |
+| Pagination | ✅ automatic | ✅ automatic (real pages) | ✅ |
+| Red H1 / heading sizes | ✅ | ✅ | ✅ |
+| Ordered list 1–6 + nested bullets | ✅ | ✅ | ✅ |
+| Simple + complex table (merged headers) | ✅ colspans render | ✅ colspans render | ✅ |
+| Inline images | ⚠️ PNG ✅, **GIF dropped** (PDFsharp has no GIF decoder) | ✅ both (Skia) | ✅ |
+| Two-column section | ❌ single column (no native multicol) | ❌ single column (no native multicol) | ✅ |
+| Fonts | ⚠️ needs OS fonts + our `IFontResolver` | ✅ bundled Skia (still needs the font files) | ✅ |
 
-Verified by rendering the endpoint output in Chrome's PDF viewer: the red **Sample Document** H1,
-the 1–6 ordered list with the nested Simple/Complex-Tables bullets, the pie-chart image, and the
-complex table whose "May 2012" / "September 2010" headers each span two columns all reproduce.
-QuestPDF's one gap is the two-column section (rendered single-column).
+Both low-cost engines were verified by rendering the endpoint output in Chrome's PDF viewer: the red
+**Sample Document** H1, the 1–6 ordered list with the nested Simple/Complex-Tables bullets, the
+pie-chart PNG, and the complex table whose "May 2012" / "September 2010" headers each span two
+columns all reproduce. MigraDoc's output is remarkably close to QuestPDF's; its two honest gaps are
+the two-column section (single-column, same as QuestPDF) and the **GIF** image (the sample's Web
+Access Symbol), which PDFsharp cannot decode and QuestPDF's Skia can — so we sniff the bytes and
+skip unsupported formats rather than emit MigraDoc's "Image has no valid type" placeholder.
 
 ### Recommendation & how to enable DevExpress
 
-- **QuestPDF** is the recommended path here: cheapest full-featured option at 11 devs (though a
-  **paid** license, not free), reuses the model we already parse, and matches the good-enough bar.
-- For a **drop-in high-fidelity one-liner**, use **DevExpress** *if the team already owns a
-  DevExpress subscription* (then it's $0 marginal), else **GemBox.Document** is the best-value
-  perpetual option.
+This is now a **free-vs-paid** choice between two engines that both hit the good-enough bar on this
+document:
+
+- **MigraDoc / PDFsharp (`migradoc`)** — pick this if **$0** matters more than polish. MIT, free
+  even commercially, and — as the head-to-head shows — its output is very close to QuestPDF's. The
+  price of free: a clunkier layout API (the mapping in `MigraDocConverter.cs` is longer and fiddlier
+  than the QuestPDF one), no bundled text shaper (you supply an `IFontResolver` + install fonts), and
+  a narrower image-format range (no GIF).
+- **QuestPDF (`oss`)** — pick this if the **$999** (perpetual, backend team) / $2,999/yr Enterprise
+  is acceptable for a materially nicer developer experience: a fluent layout API, bundled Skia/
+  HarfBuzz text shaping, and broader image support — reusing the `DocumentModel` we already parse.
+- For a **drop-in high-fidelity one-liner**, use **DevExpress** or **Telerik** *if the team already
+  owns that suite* (then it's $0 marginal), else **GemBox.Document** is the best-value perpetual
+  option.
 - The **DevExpress** converter (`DevExpressPdfConverter.cs`) compiles as a stub reporting HTTP 501
   until you: (1) add the DevExpress NuGet feed + your auth key via a `nuget.config`; (2) reference
   `DevExpress.Document.Processor` + `DevExpress.Drawing.Skia`; (3) register your license and define
@@ -406,7 +455,9 @@ WordDemo/
 │  ├─ Services/DocumentReader.cs      Open XML SDK parser (styles, numbering, images)
 │  └─ Services/PdfConversion/
 │     ├─ IPdfConverter.cs             engine interface (Engine id + Convert(path))
-│     ├─ QuestPdfConverter.cs         model → QuestPDF (engine "oss", default)
+│     ├─ QuestPdfConverter.cs         shared model → QuestPDF (engine "oss", default)
+│     ├─ MigraDocConverter.cs         independent Open XML walk → MigraDoc/PDFsharp (engine "migradoc")
+│     │                               + FileSystemFontResolver (maps families → OS .ttf/.otf)
 │     └─ DevExpressPdfConverter.cs    RichEditDocumentServer (engine "devexpress", behind DEVEXPRESS)
 └─ word-web/                          React 19 + Vite 8, pnpm
    └─ src/
@@ -428,6 +479,14 @@ WordDemo/
   Liberation ≈ Arial/Times). Alternatively embed a `.ttf` and register it once at startup with
   `QuestPDF.Drawing.FontManager.RegisterFont(File.OpenRead("Calibri.ttf"))`. docx-preview/mammoth
   (browser tabs) are unaffected — they use the *viewer's* fonts.
+- **Fonts (MigraDoc).** PDFsharp ships **no fonts and no text shaper** and resolves glyphs through an
+  `IFontResolver`, or it throws (*"No appropriate font found…"*). `MigraDocConverter` registers
+  `FileSystemFontResolver`, which reads `.ttf`/`.otf` from the OS font directories (Windows `Fonts`,
+  the standard Linux paths, and an app-relative `fonts/`). So the *same* Carlito/Liberation install
+  above satisfies MigraDoc on Linux; the resolver picks them up (Calibri→Carlito→Arial fallback). If
+  you can't install system fonts, drop `.ttf` files into a `fonts/` folder beside the app. Note
+  PDFsharp's `UseWindowsFontsUnderWindows` fallback covers only a few standard families (not Calibri),
+  which is why the custom resolver exists.
 - **QuestPDF license.** Set once at startup (`Program.cs`):
   `QuestPDF.Settings.License = LicenseType.Professional;` — use `Enterprise` if more than 10
   developers reference QuestPDF. This is a legal acknowledgement, not a key; forgetting it throws at
@@ -438,8 +497,10 @@ WordDemo/
 
 ### Adding or swapping a PDF engine
 
-The engine set is just an array in `Program.cs` keyed by `IPdfConverter.Engine`. To add one
-(e.g. **GemBox.Document** as the commercial slot instead of DevExpress):
+The engine set is just an array in `Program.cs` keyed by `IPdfConverter.Engine`. `MigraDocConverter.cs`
+is a full worked example of a **self-contained** engine (its own `.docx` reader + font resolver,
+sharing nothing with the shared model), and `QuestPdfConverter.cs` shows one that **reuses** the
+`DocumentModel`. To add another (e.g. **GemBox.Document** as the commercial slot instead of DevExpress):
 
 1. Add the NuGet package (GemBox is on nuget.org; DevExpress needs its private feed).
 2. Implement `IPdfConverter` — `Engine => "gembox"`, and in `Convert(path)`:
@@ -461,6 +522,8 @@ To enable **DevExpress** specifically: add its NuGet feed + auth key via a `nuge
 | Tab A/D/E show *"Could not reach the document API"* | Backend isn't running or is on a different port. Start it with `dotnet run --launch-profile http` (listens on `:5269`, which the Vite proxy targets). |
 | Tab E DevExpress shows *"engine is not enabled in this build"* (HTTP 501) | Expected until DevExpress is configured — see [Adding or swapping a PDF engine](#adding-or-swapping-a-pdf-engine). Use `?engine=oss` meanwhile. |
 | PDF text is boxes/□ or the wrong font (esp. in a Linux container) | Missing fonts on the backend host — install Carlito/Liberation or register a `.ttf`; see [Deploying](#deploying-linux-fonts--licensing). |
+| MigraDoc engine throws *"No appropriate font found…"* / *"…cannot be resolved for predefined error font"* | PDFsharp has no font resolver or can't find the family. `FileSystemFontResolver` reads OS fonts; ensure Calibri/Carlito (or any `.ttf` in a `fonts/` folder) is present. See [Deploying](#deploying-linux-fonts--licensing). |
+| An image is missing from the MigraDoc PDF (present in QuestPDF) | Expected for non-PNG/JPEG/BMP images (the sample's GIF). PDFsharp has no GIF decoder, so the converter skips it rather than draw an error box. Use `?engine=oss` for full image coverage. |
 | `GeneratePdf()` throws a QuestPDF license exception | `QuestPDF.Settings.License` not set (or set below your tier). Set it at startup. |
 | `DocumentLayoutException: conflicting size constraints` from QuestPDF | Something exceeds the page width (e.g. constant column widths). The converter already uses proportional (`RelativeColumn`) table columns to avoid this; keep new content width-flexible. |
 | First `/api/document/pdf` call is ~1 s, later ones ~30 ms | Expected — the first request pays QuestPDF/Skia JIT + init warm-up; steady-state is tens of ms. |

@@ -9,7 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Professional;
 
 // In-process docx → PDF engines, keyed by their wire id (?engine=…).
-var pdfConverters = new IPdfConverter[] { new QuestPdfConverter(), new DevExpressPdfConverter() }
+var pdfConverters = new IPdfConverter[]
+    {
+        new QuestPdfConverter(), new MigraDocConverter(), new DevExpressPdfConverter(),
+    }
     .ToDictionary(c => c.Engine, StringComparer.OrdinalIgnoreCase);
 
 // OpenAPI document (served at /openapi/v1.json) + Swagger UI on top of it.
@@ -105,7 +108,8 @@ app.MapGet("/api/document/pdf", (string? engine) =>
     .WithTags("Document")
     .WithSummary("Server-rendered PDF")
     .WithDescription("Converts the .docx to PDF in-process and returns it inline. "
-                     + "engine=oss (QuestPDF, default) | devexpress (DevExpress Office File API).")
+                     + "engine=oss (QuestPDF, default) | migradoc (PDFsharp/MigraDoc, free) "
+                     + "| devexpress (DevExpress Office File API).")
     .Produces(StatusCodes.Status200OK, contentType: "application/pdf")
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound)

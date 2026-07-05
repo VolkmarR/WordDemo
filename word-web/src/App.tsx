@@ -36,7 +36,7 @@ const TABS: { id: Approach; label: string; desc: string }[] = [
   {
     id: 'e',
     label: 'E — Backend · PDF export',
-    desc: 'Converted to PDF on the .NET server, in-process (QuestPDF or DevExpress), shown in the browser PDF viewer. Nothing leaves the machine.',
+    desc: 'Converted to PDF on the .NET server, in-process (MigraDoc, QuestPDF, or DevExpress), shown in the browser PDF viewer. Nothing leaves the machine.',
   },
 ]
 

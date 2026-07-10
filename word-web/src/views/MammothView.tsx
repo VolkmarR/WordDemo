@@ -6,8 +6,8 @@ import './MammothView.css'
 // tables, images as data URLs) and deliberately drops presentation — no fonts, colors,
 // columns, or page look. It is the "how far does a plain semantic converter get?" comparison
 // point, styled here with a small readable stylesheet.
-
-export default function MammothView() {
+type Props = {file: File}
+export default function MammothView({file}: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<string>('Converting…')
 
@@ -17,7 +17,14 @@ export default function MammothView() {
     if (!host) return
     ;(async () => {
       try {
-        const res = await fetch('/api/document/file')
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const res = await fetch('/api/document/file', {
+          method: 'POST',
+          body: formData,
+        })
+
         if (!res.ok) throw new Error(`API responded with ${res.status}`)
         const arrayBuffer = await res.arrayBuffer()
         if (cancelled) return
@@ -34,7 +41,7 @@ export default function MammothView() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [file])
 
   return (
     <div className="mm-scroll">

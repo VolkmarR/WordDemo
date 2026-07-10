@@ -50,11 +50,19 @@ public sealed class MigraDocConverter : IPdfConverter
     private const double TwipsToPt = 72.0 / 1440.0;    // 1440 twips = 1 inch = 72 pt
     private const double EmuToPt = 72.0 / 914400.0;    // 914400 EMU = 1 inch = 72 pt
 
+    
     public byte[] Convert(string docxPath)
     {
+        using var stream = File.OpenRead(docxPath);
+        return Convert(stream);
+    }
+    
+    
+    public byte[] Convert(Stream stream)
+    {
         // Read-only, ReadWrite share so a copy open in Word doesn't block us (same as DocumentReader).
-        using var fs = new FileStream(docxPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var wdoc = WordprocessingDocument.Open(fs, false);
+       
+        using var wdoc = WordprocessingDocument.Open(stream, false);
         var main = wdoc.MainDocumentPart
             ?? throw new InvalidOperationException("Document has no main part.");
         var body = main.Document?.Body

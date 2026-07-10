@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 using WordApi.Models;
 using WordApi.Services;
 using WordApi.Services.PdfConversion;
@@ -32,23 +34,35 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// Resolve the .docx path from config key "WordFile" (default ../word-demo.docx),
-// relative to the content root. The file never leaves the machine.
-string ResolveWordPath() =>
-    Path.GetFullPath(Path.Combine(
-        app.Environment.ContentRootPath,
-        app.Configuration["WordFile"] ?? "../word-demo.docx"));
-
-const string DocxContentType =
+const string docxContentType =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // Approach A: parsed on the server (Open XML SDK) → shared DocumentModel JSON.
-app.MapGet("/api/document", () =>
+app.MapPost("/api/document", async (IFormFile file) =>
     {
-        var path = ResolveWordPath();
-        if (!File.Exists(path)) return Results.NotFound($"Word file not found: {path}");
-        return Results.Ok(DocumentReader.Read(path));
+        if (file.Length == 0)
+            return Results.BadRequest(new
+            {
+                error = "No file uploaded"
+            });
+
+            
+        await using var stream = file.OpenReadStream();
+        
+        var sw = Stopwatch.StartNew();
+
+        var model = DocumentReader.Read(stream);
+
+        sw.Stop();
+
+        return Results.Ok(new
+        {
+            model,
+            ms = sw.Elapsed.TotalMilliseconds
+        });
+        
     })
+    .DisableAntiforgery()
     .WithName("GetDocument")
     .WithTags("Document")
     .WithSummary("Parsed document model")
@@ -58,38 +72,50 @@ app.MapGet("/api/document", () =>
     .Produces(StatusCodes.Status404NotFound);
 
 // Approaches B, C, D: raw .docx bytes for browser-side parsing. Nothing leaves the browser.
-app.MapGet("/api/document/file", () =>
+//Api accept file in input just for POC purposes, to test more files
+app.MapPost("/api/document/file", (IFormFile file) =>
     {
-        var path = ResolveWordPath();
-        if (!File.Exists(path)) return Results.NotFound($"Word file not found: {path}");
-        var bytes = File.ReadAllBytes(path);
-        return Results.File(bytes, DocxContentType, Path.GetFileName(path));
+        using var memory = new MemoryStream();
+
+        file.CopyTo(memory);
+
+        var bytes = memory.ToArray();
+        
+        return Results.File(bytes, docxContentType, Path.GetFileName(file.FileName));
     })
+    .DisableAntiforgery()
     .WithName("GetDocumentFile")
     .WithTags("Document")
     .WithSummary("Raw .docx bytes")
     .WithDescription("Serves the original .docx same-origin for the browser-side renderers "
                      + "(docx-preview, mammoth).")
-    .Produces(StatusCodes.Status200OK, contentType: DocxContentType)
+    .Produces(StatusCodes.Status200OK, contentType: docxContentType)
     .Produces(StatusCodes.Status404NotFound);
 
 // Approach E / F: convert the .docx to PDF on the server, in-process, and stream it back inline.
 // ?engine=oss (QuestPDF, default) or ?engine=devexpress. The .docx never leaves the machine.
-app.MapGet("/api/document/pdf", (string? engine) =>
+app.MapPost("/api/document/pdf", async (string? engine, [FromForm]IFormFile file) =>
     {
         var key = string.IsNullOrWhiteSpace(engine) ? "oss" : engine;
         if (!pdfConverters.TryGetValue(key, out var converter))
             return Results.BadRequest(
                 $"Unknown engine '{engine}'. Use one of: {string.Join(", ", pdfConverters.Keys)}.");
 
-        var path = ResolveWordPath();
-        if (!File.Exists(path)) return Results.NotFound($"Word file not found: {path}");
 
+        if (file.Length == 0)
+            return Results.BadRequest(new
+            {
+                error = "No file uploaded"
+            });
+
+            
+        await using var stream = file.OpenReadStream();
+        
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         byte[] pdf;
         try
         {
-            pdf = converter.Convert(path);
+            pdf = converter.Convert(stream);
         }
         catch (NotSupportedException ex)
         {
@@ -104,6 +130,7 @@ app.MapGet("/api/document/pdf", (string? engine) =>
                                           ("X-Pdf-Bytes", pdf.Length.ToString()),
                                           ("Access-Control-Expose-Headers", "X-Convert-Ms, X-Pdf-Bytes"));
     })
+    .DisableAntiforgery()
     .WithName("GetDocumentPdf")
     .WithTags("Document")
     .WithSummary("Server-rendered PDF")

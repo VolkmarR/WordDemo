@@ -1,16 +1,24 @@
-import type { DocumentModel } from '../model'
+import type {DocumentModel} from '../model'
 
 /** Shared result shape carried by every adapter (mirrors the Excel POC's LoadResult). */
 export interface LoadResult {
-  model: DocumentModel
-  ms: number
+    model: DocumentModel
+    ms: number
 }
 
 /** Approach A: fetch the server-parsed DocumentModel JSON from the .NET backend. */
-export async function loadFromBackend(): Promise<LoadResult> {
-  const t0 = performance.now()
-  const res = await fetch('/api/document')
-  if (!res.ok) throw new Error(`API responded with ${res.status}`)
-  const model = (await res.json()) as DocumentModel
-  return { model, ms: performance.now() - t0 }
+export async function loadFromBackend(file: File): Promise<LoadResult> {
+    const formData = new FormData()
+    const API_URL = '/api/document'
+    formData.append('file', file)
+
+    const response = await fetch(API_URL, {
+        method: 'POST',
+        body: formData,
+    })
+
+    if (!response.ok)
+        throw new Error(`HTTP ${response.status}`)
+
+    return response.json()
 }

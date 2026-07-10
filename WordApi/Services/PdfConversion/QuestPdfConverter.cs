@@ -26,7 +26,13 @@ public sealed class QuestPdfConverter : IPdfConverter
 
     public byte[] Convert(string docxPath)
     {
-        var model = DocumentReader.Read(docxPath);
+        using var stream = File.OpenRead(docxPath);
+        return Convert(stream);
+    }
+
+    public byte[] Convert(Stream stream)
+    {
+        var model = DocumentReader.Read(stream);
         var page = model.Sections.Count > 0 ? model.Sections[0].Page : null;
 
         return Document.Create(doc =>
@@ -46,20 +52,24 @@ public sealed class QuestPdfConverter : IPdfConverter
                         p.Margin(72f / 2f); // 0.5"
                     }
 
-                    // Calibri to match the sample; falls back to whatever the host has installed.
-                    p.DefaultTextStyle(t => t.FontFamily("Calibri", "Carlito", "sans-serif").FontSize(11));
+                    p.DefaultTextStyle(t =>
+                        t.FontFamily("Calibri", "Carlito", "sans-serif")
+                            .FontSize(11));
 
                     p.Content().Column(col =>
                     {
                         foreach (var section in model.Sections)
+                        {
                             foreach (var block in section.Blocks)
+                            {
                                 col.Item().Element(c => RenderBlock(c, block));
+                            }
+                        }
                     });
                 });
             })
             .GeneratePdf();
     }
-
     private static void RenderBlock(IContainer c, Block block)
     {
         switch (block)

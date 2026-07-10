@@ -33,12 +33,24 @@ public static class DocumentReader
 
     public static DocumentModel Read(string path)
     {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var doc = WordprocessingDocument.Open(fs, false);
+        using var fs = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite);
+
+        return Read(fs);
+    }
+
+    public static DocumentModel Read(Stream stream)
+    {
+        using var doc = WordprocessingDocument.Open(stream, false);
+
         var main = doc.MainDocumentPart
-            ?? throw new InvalidOperationException("Document has no main part.");
-        var body = main.Document.Body
-            ?? throw new InvalidOperationException("Document has no body.");
+                   ?? throw new InvalidOperationException("Document has no main part.");
+
+        var body = main.Document?.Body
+                   ?? throw new InvalidOperationException("Document has no body.");
 
         var ctx = new Ctx(main, new StyleIndex(main), new NumberingIndex(main));
 
@@ -53,8 +65,11 @@ public static class DocumentReader
                 {
                     case Paragraph p:
                         current.Add(ctx.BuildParagraph(p));
+
                         // A sectPr inside a paragraph ends the current section.
-                        var inlineSect = p.ParagraphProperties?.GetFirstChild<SectionProperties>();
+                        var inlineSect = p.ParagraphProperties?
+                            .GetFirstChild<SectionProperties>();
+
                         if (inlineSect != null)
                         {
                             sections.Add(BuildSection(inlineSect, current));
@@ -84,7 +99,7 @@ public static class DocumentReader
 
         return new DocumentModel(sections, ctx.Stats());
     }
-
+    
     private static Section BuildSection(SectionProperties? sect, List<Block> blocks)
     {
         // Defaults: US Letter, 1in margins, single column.

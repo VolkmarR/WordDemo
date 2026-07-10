@@ -12,4 +12,5 @@ public interface IPdfConverter
 
     /// <summary>Convert the .docx at <paramref name="docxPath"/> to a PDF byte array.</summary>
     byte[] Convert(string docxPath);
+    byte[] Convert(Stream stream);
 }

@@ -20,7 +20,9 @@ interface Loaded {
   bytes: number | null
 }
 
-export default function PdfView() {
+type Props = { file: File }
+
+export default function PdfView({file}: Props) {
   const [engine, setEngine] = useState<Engine>('oss')
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [loading, setLoading] = useState(false)
@@ -32,7 +34,13 @@ export default function PdfView() {
     setLoading(true)
     setError(null)
 
-    fetch(`/api/document/pdf?engine=${engine}`)
+      const formData = new FormData()
+      formData.append('file', file)
+
+      fetch(`/api/document/pdf?engine=${engine}`, {
+          method: 'POST',
+          body: formData,
+      })
       .then(async (res) => {
         if (!res.ok) {
           // 501 when the DevExpress engine isn't configured in this build; surface its message.
@@ -69,7 +77,7 @@ export default function PdfView() {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [engine])
+  }, [engine, file])
 
   const active = ENGINES.find((e) => e.id === engine)!
 

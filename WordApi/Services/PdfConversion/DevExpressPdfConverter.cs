@@ -21,12 +21,23 @@ public sealed class DevExpressPdfConverter : IPdfConverter
 
     public byte[] Convert(string docxPath)
     {
+        using var stream = File.OpenRead(docxPath);
+        return Convert(stream);
+    }
+    
+    public byte[] Convert(Stream stream)
+    {
 #if DEVEXPRESS
-        using var server = new DevExpress.XtraRichEdit.RichEditDocumentServer();
-        server.LoadDocument(docxPath, DevExpress.XtraRichEdit.DocumentFormat.OpenXml);
-        using var ms = new MemoryStream();
-        server.ExportToPdf(ms);
-        return ms.ToArray();
+    using var server = new DevExpress.XtraRichEdit.RichEditDocumentServer();
+
+    stream.Position = 0;
+    server.LoadDocument(stream, DevExpress.XtraRichEdit.DocumentFormat.OpenXml);
+
+    using var ms = new MemoryStream();
+
+    server.ExportToPdf(ms);
+
+    return ms.ToArray();
 #else
         throw new NotSupportedException(
             "The DevExpress PDF engine is not configured in this build. Add the DevExpress NuGet "
